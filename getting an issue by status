@@ -1,0 +1,69 @@
+import groovy.json.JsonSlurper
+import groovy.json.JsonBuilder
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.Base64
+
+def jiraUrl = "https://testgette.atlassian.net/"
+def email = "gette4aleks@gmail.com"
+def apiToken = ""
+
+// Получение задач из проекта
+def getIssues(jiraUrl, encodedCredentials, projectKey) {
+    def url = new URL("${jiraUrl}rest/api/2/search?jql=project=${projectKey}")
+    def connection = (HttpURLConnection) url.openConnection()
+    connection.setRequestMethod("GET")
+    connection.setRequestProperty("Authorization", "Basic ${encodedCredentials}")
+    connection.setRequestProperty("Content-Type", "application/json")
+    
+    if (connection.responseCode == 200) {
+        def response = connection.inputStream.text
+        println "Ответ от API: ${response}" // Отладочный вывод
+        def jsonResponse = new JsonSlurper().parseText(response)
+        return jsonResponse.issues // Возвращаем задачи из ответа
+    } else {
+        println("Ошибка: ${connection.responseCode} - ${connection.responseMessage}")
+        return []
+    }
+}
+
+// Обновление статуса задачи
+def updateIssueStatus(jiraUrl, encodedCredentials, issueId, transitionId) {
+    def url = new URL("${jiraUrl}rest/api/2/issue/${issueId}/transitions")
+    def connection = (HttpURLConnection) url.openConnection()
+    connection.setRequestMethod("POST")
+    connection.setRequestProperty("Authorization", "Basic ${encodedCredentials}")
+    connection.setRequestProperty("Content-Type", "application/json")
+    connection.doOutput = true
+
+    def jsonBuilder = new JsonBuilder()
+    jsonBuilder {
+        transition {
+            id transitionId
+        }
+    }
+
+    connection.outputStream.withWriter("UTF-8") { writer ->
+        writer << jsonBuilder.toString()
+    }
+
+    if (connection.responseCode == 204) {
+        println "Статус задачи '${issueId}' успешно обновлен."
+    } else {
+        println("Ошибка при обновлении статуса: ${connection.responseCode} - ${connection.responseMessage}")
+    }
+}
+
+// Получение задач
+def issues = getIssues(jiraUrl, encodedCredentials, "test_work")
+println "Задачи в проекте test_work: ${issues}"
+
+// Пример обновления статуса задачи
+def issueId = "YOUR_ISSUE_ID" // Замените на реальный ID задачи
+def transitionId = "YOUR_TRANSITION_ID" // Замените на ID перехода статуса
+updateIssueStatus(jiraUrl, encodedCredentials, issueId, transitionId)
+
+// Вывод информации о задачах
+issues.each { issue ->
+    println "Задача: ${issue.key}, ID: ${issue.id}, Тип: ${issue.fields.issuetype.name}, Приоритет: ${issue.fields.priority.name}"
+}
