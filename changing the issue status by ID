@@ -1,0 +1,42 @@
+import groovy.json.JsonSlurper
+import groovy.json.JsonBuilder
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.Base64
+
+// Конфигурация
+def issueKey = "TEST2025-2" // Укажите ключ задачи
+def transitionId = "31"  // Укажите ID перехода статуса
+def jiraUrl = "https://testgette.atlassian.net/"
+def email = "gette4aleks@gmail.com"
+def apiToken = ""
+def encodedCredentials = Base64.getEncoder().encodeToString("${email}:${apiToken}".getBytes("UTF-8"))
+
+// URL для выполнения перехода
+def apiUrl = "${jiraUrl}rest/api/3/issue/${issueKey}/transitions"
+
+// JSON тело запроса
+def body = [
+    transition: [
+        id: transitionId
+    ]
+]
+
+// Создание и настройка HTTP соединения
+def url = new URL(apiUrl)
+def connection = (HttpURLConnection) url.openConnection()
+connection.with {
+    doOutput = true
+    requestMethod = 'POST'
+    setRequestProperty("Authorization", "Basic ${encodedCredentials}")
+    setRequestProperty("Content-Type", "application/json")
+
+    // Отправка тела запроса
+    def writer = new OutputStreamWriter(outputStream)
+    writer.write(new JsonBuilder(body).toString())
+    writer.flush()
+    writer.close()
+}
+
+// Чтение ответа
+def responseCode = connection.responseCode
