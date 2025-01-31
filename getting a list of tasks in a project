@@ -1,0 +1,28 @@
+import groovy.json.JsonSlurper
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.Base64
+
+def jiraUrl = "https://testgette.atlassian.net/"
+def email = "gette4aleks@gmail.com"
+def apiToken = ""
+def encodedCredentials = Base64.getEncoder().encodeToString("${email}:${apiToken}".getBytes("UTF-8"))
+
+def getIssues(jiraUrl, encodedCredentials, projectKey) {
+    def url = new URL("${jiraUrl}rest/api/2/search?jql=project=${projectKey}")
+    def connection = (HttpURLConnection) url.openConnection()
+    connection.setRequestMethod("GET")
+    connection.setRequestProperty("Authorization", "Basic ${encodedCredentials}")
+    connection.setRequestProperty("Content-Type", "application/json")
+    
+    if (connection.responseCode == 200) {
+        def response = connection.inputStream.text
+        println "Ответ от API: ${response}" // Отладочный вывод
+        def jsonResponse = new JsonSlurper().parseText(response)
+    } else {
+        println("Ошибка: ${connection.responseCode} - ${connection.responseMessage}")
+        return []
+    }
+}
+def issues = getIssues(jiraUrl, encodedCredentials, "test_work")
+println "Задачи в проекте test_work: ${issues}"
