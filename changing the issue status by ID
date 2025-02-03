@@ -1,42 +1,54 @@
-import groovy.json.JsonSlurper
-import groovy.json.JsonBuilder
-import java.net.HttpURLConnection
-import java.net.URL
-import java.util.Base64
 
-// Конфигурация
-def issueKey = "TEST2025-2" // Укажите ключ задачи
-def transitionId = "31"  // Укажите ID перехода статуса
+//Считывание события, выполняет переход статуса и возвращает код 200 при успешном выполнении
+
+import groovy.json.JsonOutput
+
+def issueKey = "TEST2025"         
+def transitionId = "31"           // ID перехода статуса
 def jiraUrl = "https://testgette.atlassian.net/"
-def email = "gette4aleks@gmail.com"
-def apiToken = ""
-def encodedCredentials = Base64.getEncoder().encodeToString("${email}:${apiToken}".getBytes("UTF-8"))
+def username = "gette4aleks@gmail.com"
+def apiToken = ""               
 
-// URL для выполнения перехода
-def apiUrl = "${jiraUrl}rest/api/3/issue/${issueKey}/transitions"
 
-// JSON тело запроса
-def body = [
-    transition: [
-        id: transitionId
-    ]
-]
+def restEndpoint = "${jiraUrl}rest/api/3/issue/${issueKey}/transitions"
 
-// Создание и настройка HTTP соединения
-def url = new URL(apiUrl)
-def connection = (HttpURLConnection) url.openConnection()
-connection.with {
-    doOutput = true
-    requestMethod = 'POST'
-    setRequestProperty("Authorization", "Basic ${encodedCredentials}")
-    setRequestProperty("Content-Type", "application/json")
+def payload = [ transition: [ id: transitionId ] ]
+def jsonPayload = JsonOutput.toJson(payload)
 
-    // Отправка тела запроса
-    def writer = new OutputStreamWriter(outputStream)
-    writer.write(new JsonBuilder(body).toString())
-    writer.flush()
-    writer.close()
+try {
+    def url = new URL(restEndpoint)
+    def connection = (HttpURLConnection) url.openConnection()
+    connection.requestMethod = "POST"
+    connection.doOutput = true
+    connection.setRequestProperty("Content-Type", "application/json")
+    connection.setRequestProperty("Accept", "application/json")
+    
+    // Формируем заголовок авторизации (Basic Auth)
+    def authString = "${username}:${apiToken}".bytes.encodeBase64().toString()
+    connection.setRequestProperty("Authorization", "Basic ${authString}")
+    
+    // Записываем JSON данные в выходной поток
+    connection.outputStream.withWriter("UTF-8") { writer ->
+        writer << jsonPayload
+    }
+    
+    // Получаем код ответа от Jira
+    def responseCode = connection.responseCode
+    if (responseCode >= 200 && responseCode < 300) {
+        println "Статус задачи ${issueKey} успешно обновлён (Response code: ${responseCode})"
+    } else {
+        println "Не удалось обновить статус задачи ${issueKey} (Response code: ${responseCode})"
+        def errorStream = connection.errorStream
+        if (errorStream) {
+            errorStream.withReader("UTF-8") { reader ->
+                println "Ошибка: ${reader.text}"
+            }
+        }
+    }
+} catch (Exception e) {
+    // Логирование ошибки исключения
+    println "Произошла ошибка при вызове API Jira: ${e.message}"
 }
 
-// Чтение ответа
-def responseCode = connection.responseCode
+
+println "200"
