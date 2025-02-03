@@ -1,28 +1,92 @@
+import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
-import java.net.HttpURLConnection
-import java.net.URL
-import java.util.Base64
+import java.net.URLEncoder
 
+// Конфигурация
+def projectKey = "TEST2025"          // Ключ проекта (для получения списка задач проекта)
+def transitionId = "31"              // ID перехода статуса
 def jiraUrl = "https://testgette.atlassian.net/"
-def email = "gette4aleks@gmail.com"
+def username = "gette4aleks@gmail.com"
 def apiToken = ""
-def encodedCredentials = Base64.getEncoder().encodeToString("${email}:${apiToken}".getBytes("UTF-8"))
 
-def getIssues(jiraUrl, encodedCredentials, projectKey) {
-    def url = new URL("${jiraUrl}rest/api/2/search?jql=project=${projectKey}")
-    def connection = (HttpURLConnection) url.openConnection()
-    connection.setRequestMethod("GET")
-    connection.setRequestProperty("Authorization", "Basic ${encodedCredentials}")
-    connection.setRequestProperty("Content-Type", "application/json")
+// Функция для получения списка задач проекта по JQL
+def getIssuesInProject(projectKey, jiraUrl, username, apiToken, transitionId) {
+    def jql = "project=${projectKey}"
+    def encodedJql = URLEncoder.encode(jql, "UTF-8")
+    def searchUrl = "${jiraUrl}rest/api/3/search?jql=${encodedJql}"
     
-    if (connection.responseCode == 200) {
-        def response = connection.inputStream.text
-        println "Ответ от API: ${response}" // Отладочный вывод
-        def jsonResponse = new JsonSlurper().parseText(response)
-    } else {
-        println("Ошибка: ${connection.responseCode} - ${connection.responseMessage}")
+    try {
+        def url = new URL(searchUrl)
+        def connection = (HttpURLConnection) url.openConnection()
+        connection.setRequestProperty("Accept", "application/json")
+        
+        // Установка базовой авторизации
+        def authString = "${username}:${apiToken}".bytes.encodeBase64().toString()
+        connection.setRequestProperty("Authorization", "Basic ${authString}")
+        
+        if (connection.responseCode == 200) {
+            // Приводим результат парсинга к типу Map
+            Map jsonResponse = connection.inputStream.withReader("UTF-8") { reader ->
+                new JsonSlurper().parse(reader) as Map
+            }
+            return jsonResponse.get("issues")
+        } else {
+            println "Ошибка получения задач из проекта (Response code: ${connection.responseCode})"
+            return []
+        }
+    } catch (Exception e) {
+        println "Ошибка при выполнении запроса к Jira: ${e.message}"
         return []
     }
 }
-def issues = getIssues(jiraUrl, encodedCredentials, "test_work")
-println "Задачи в проекте test_work: ${issues}"
+
+// Функция для обновления статуса задачи через Jira REST API
+def updateIssueStatus(String issueKey, jiraUrl, username, apiToken, transitionId) {
+    def transitionUrl = "${jiraUrl}rest/api/3/issue/${issueKey}/transitions"
+    def payload = [transition: [id: transitionId]]
+    def jsonPayload = JsonOutput.toJson(payload)
+    
+    try {
+        def url = new URL(transitionUrl)
+        def connection = (HttpURLConnection) url.openConnection()
+        connection.requestMethod = "POST"
+        connection.doOutput = true
+        connection.setRequestProperty("Content-Type", "application/json")
+        connection.setRequestProperty("Accept", "application/json")
+        
+        def authString = "${username}:${apiToken}".bytes.encodeBase64().toString()
+        connection.setRequestProperty("Authorization", "Basic ${authString}")
+        
+        // Отправка JSON-пейлоада
+        connection.outputStream.withWriter("UTF-8") { writer ->
+            writer << jsonPayload
+        }
+        
+        def responseCode = connection.responseCode
+        if (responseCode >= 200 && responseCode < 300) {
+            println "Задача ${issueKey} успешно обновлена (Response code: ${responseCode})"
+        } else {
+            println "Ошибка обновления задачи ${issueKey} (Response code: ${responseCode})"
+            connection.errorStream?.withReader("UTF-8") { reader ->
+                println "Сообщение об ошибке: ${reader.text}"
+            }
+        }
+    } catch (Exception e) {
+        println "Ошибка при обновлении задачи ${issueKey}: ${e.message}"
+    }
+}
+
+// Основной блок: получение списка задач и обновление статуса каждой задачи
+def issues = getIssuesInProject(projectKey, jiraUrl, username, apiToken, transitionId)
+if (issues && issues.size() > 0) {
+    issues.each { issue ->
+        // Передаем ключ задачи, полученный из объекта issue
+        
+        updateIssueStatus(issue.key, jiraUrl, username, apiToken, transitionId)
+    }
+} else {
+    println "Задачи не найдены в проекте ${projectKey}"
+}
+
+// Возвращаем HTTP-код 200 для подтверждения получения события
+println "HTTP/1.1 200 OK"
